@@ -1,36 +1,156 @@
 package com.photoncat.xmirror;
 
 import android.Manifest;
+import android.graphics.Bitmap;
+import android.graphics.Matrix;
+import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
+import android.view.Surface;
+import android.view.TextureView;
+import android.widget.Toast;
 
-public class MirrorActivity extends AppCompatActivity {
+import java.io.IOException;
+
+public class MirrorActivity extends AppCompatActivity implements TextureView.SurfaceTextureListener{
     private Camera mCamera;
-    private CameraPreview mPreview;
+    private TextureView mTextureView;
 
     @Override
-    public void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
-
-        // Create an instance of Camera
-        mCamera = getCameraInstance();
-
-        // Create our Preview view and set it as the content of our activity.
-        mPreview = new CameraPreview(this, mCamera);
-
-        setContentView(mPreview);
+        setContentView(R.layout.activity_preview);
+        mTextureView = (TextureView) findViewById(R.id.camera_texture);
+        mTextureView.setSurfaceTextureListener(this);
     }
 
-    public static Camera getCameraInstance(){
-        Camera c = null;
+    @Override
+    public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
+
+        Camera.CameraInfo info = new Camera.CameraInfo();
+        for (int i = 0; i < Camera.getNumberOfCameras(); i++) {
+            Camera.getCameraInfo(i, info);
+
+            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                mCamera = Camera.open(i);
+                break;
+            }
+        }
+
+        if (null == mCamera) {
+            Log.e("camera-reverse", "no front facing camera");
+            Toast toast = Toast.makeText(this.getApplicationContext(), "No front facing camera", Toast.LENGTH_LONG);
+            toast.show();
+            finish();
+        }
+
+        /*
+           This doesn't work
+           setCameraDisplayOrientation(info, mCamera);
+         */
+
+        //make portrait
+        mCamera.setDisplayOrientation(90);
+        //create a matrix to invert the x-plane
+        Matrix matrix = new Matrix();
+        matrix.setScale(-1, 1);
+        //move it back to in view otherwise it'll be off to the left.
+        matrix.postTranslate(width, 0);
+        mTextureView.setTransform(matrix);
+
         try {
-            c = Camera.open();
+            /* Tell the camera to write onto our textureView mTextureView */
+            mCamera.setPreviewTexture(surfaceTexture);
+            mCamera.startPreview();
+        } catch (IOException ioe) {
+            Log.e("camera-reverse", ioe.getMessage());
         }
-        catch (Exception e){
+    }
+
+    @Override
+    public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int i, int i2) {
+
+    }
+
+    @Override
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+        if (null != mCamera) {
+            mCamera.stopPreview();
+            mCamera.release();
         }
-        return c;
+        return true;
+    }
+
+    @Override
+    public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
+        //This is where you get the image to check for barcode
+
+        // read the image from the SurfaceTexture
+        Bitmap barcodeBmp = mTextureView.getBitmap();
+
+        //get pixel array
+        int width = barcodeBmp.getWidth();
+        int height = barcodeBmp.getHeight();
+        int[] pixels = new int[barcodeBmp.getHeight() * barcodeBmp.getWidth()];
+        barcodeBmp.getPixels(pixels, 0, width, 0, 0, width, height);
+
+        /*
+        If using zbar barcode processing library.
+        // create a barcode image
+		Image barcode = new Image(width, height, "RGB4");
+		barcode.setData(pixels);
+		int result = mScanner.scanImage(barcode.convert("Y800"));
+         */
+
+    }
+
+    public void onPause() {
+        super.onPause();
+        releaseCamera();
+    }
+
+    private void releaseCamera() {
+        if (mCamera != null) {
+            mCamera.setPreviewCallback(null);
+            mCamera.release();
+            mCamera = null;
+        }
+    }
+
+    /**
+     * From http://developer.android.com/reference/android/hardware/Camera.html#setDisplayOrientation%28int%29
+     *
+     * @param info
+     * @param camera
+     */
+    public void setCameraDisplayOrientation(
+            Camera.CameraInfo info, android.hardware.Camera camera) {
+
+        int rotation = this.getWindowManager().getDefaultDisplay()
+                .getRotation();
+        int degrees = 0;
+        switch (rotation) {
+            case Surface.ROTATION_0:
+                degrees = 0;
+                break;
+            case Surface.ROTATION_90:
+                degrees = 90;
+                break;
+            case Surface.ROTATION_180:
+                degrees = 180;
+                break;
+            case Surface.ROTATION_270:
+                degrees = 270;
+                break;
+        }
+
+        int result;
+        result = (info.orientation + degrees) % 360;
+        result = (360 - result) % 360;  // compensate the mirror
+
+        camera.setDisplayOrientation(result);
     }
 }
