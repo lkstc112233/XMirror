@@ -21,9 +21,9 @@ public class MirrorActivity extends AppCompatActivity implements TextureView.Sur
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
+        requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
         setContentView(R.layout.activity_preview);
-        mTextureView = (TextureView) findViewById(R.id.camera_texture);
+        mTextureView = findViewById(R.id.camera_texture);
         mTextureView.setSurfaceTextureListener(this);
     }
 
